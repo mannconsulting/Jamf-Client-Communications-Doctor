@@ -12,7 +12,7 @@
 #           If you'd like updates or support sign up at https://mann.com/jamf or email support@mann.com for more details
 ###############################################################################
 readonly SCRIPT_PATH="${0}"
-readonly VERSIONDATE=20230818
+readonly VERSIONDATE=20230829
 readonly APPLICATION=JamfClientCommunicationsDoctor
 
 LOGGING=INFO
@@ -295,7 +295,7 @@ parseProfile() {
       export "${key}=${value}"
     done
     if (( ${#keys[@]} > 0 )); then
-      printlog "Custom configuration profile settings for $1: ${customConfigurationString}" INFO
+      printlog "Custom configuration profile settings for $1: ${customConfigurationString}" DEBUG
     fi
     unset customConfigurationString
     IFS=${SAVEIFS}
@@ -363,10 +363,10 @@ else
     exit 2
   fi
   jamfCommand=$(ps -o command= ${jamfPid})
-  printlog "jamfCommand is ${jamfCommand}" INFO
+  printlog "jamfCommand is ${jamfCommand}" DEBUG
 
   if [[ ${caffeinateJamf:l} == "yes" ]]; then
-    printlog "Caffeinate set to yes, Caffeinating the process" INFO
+    printlog "Caffeinate set to yes, Caffeinating the process" DEBUG
     caffeinate -s -t ${caffeinateTimer} -w ${jamfPid} &
     caffeinatePID=$!
   fi
@@ -390,7 +390,7 @@ else
     IFS=$'\n'
     jamfChildren=( $(pgrep -aP $jamfPid) )
     if ! ps -p $jamfPid > /dev/null 2>&1 ; then
-      printlog "Jamf process gone, exiting." INFO
+      printlog "Jamf process gone, exiting." DEBUG
       caffeinateKill
       exit 0
     fi
