@@ -4,11 +4,11 @@
 # Creator:  Mann Consulting
 # Summary:  Monitors and repairs Jamf Client Communications
 ##
-# More info: https://mann.com/docs
+# More info: https://mann.com/jamf/doctor
 #
-# Note:     This script is part of Mann Consulting's Jamf Pro Workflows subscription and is made
-#           available to the public with no guarantees or support.  Mann Consulting is not responsible
-#           for data loss or other damages caused by use of this script.
+# Note:     This script is part of Mann Consulting's Jamf Pro Workflows subscription and is made available free to the public with no guarantees
+#           or support.  Mann Consulting is not responsible for data loss or other damages caused by use of this script.
+#           Redistribution or commercial use without including this header is prohibited.
 #           If you'd like updates or support sign up at https://mann.com/jamf or email support@mann.com for more details
 ###############################################################################
 readonly SCRIPT_PATH="${0}"
