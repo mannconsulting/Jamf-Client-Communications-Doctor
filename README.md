@@ -4,7 +4,7 @@ Jamf Pro doesn’t have guard rails in place for when it runs policies or invent
 
 Some common examples of objects that will cause a hang:
 * A script that waits for user input.
-* A script that implements Jamf Helper without the -timeout flag.
+* A script that implements JamfHelper or osascript without the timeout flag.
 * A script that runs a child process which subsequently hangs.
 * The computer goes to sleep during the check-in process.
 
