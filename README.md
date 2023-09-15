@@ -22,8 +22,11 @@ Add the script to your Jamf instance and scope to computers in a policy.  The Do
 
 # How to Uninstall
 sudo launchctl bootout system "/Library/LaunchDaemons/com.mann.JamfClientCommunicationsDoctor.plist"
+
 sudo rm "/Library/LaunchDaemons/com.mann.JamfClientCommunicationsDoctor.plist"
+
 sudo rm "/Library/Application Support/Mann/Scripts/Jamf Client Communications Doctor.sh"
+
 
 # Documentation
 Documentation available at https://docs.google.com/document/d/1p0OT3AFrYdS-H6Nio1caa81C-Vug5ZKcRLgKTzUv6zU
