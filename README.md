@@ -6,6 +6,7 @@ Some common examples of objects that will cause a hang:
 * A script that waits for user input.
 * A script that implements JamfHelper or osascript without the timeout flag.
 * A script that runs a child process which subsequently hangs.
+* An installer package waits for input or external data.
 * The computer goes to sleep during the check-in process.
 
 The Jamf Client Communications Doctor aims to fix this by doing the following:
@@ -16,5 +17,13 @@ The Jamf Client Communications Doctor aims to fix this by doing the following:
 * Prevents  the computer from system sleeping for the duration of the check-in process
 ** Display sleep and screen lock are allowed!
 
+# How to Install
+Add the script to your Jamf instance and scope to computers in a policy.  The Doctor will self install/update locally on the computer as needed.
 
+# How to Uninstall
+sudo launchctl bootout system "/Library/LaunchDaemons/com.mann.JamfClientCommunicationsDoctor.plist"
+sudo rm "/Library/LaunchDaemons/com.mann.JamfClientCommunicationsDoctor.plist"
+sudo rm "/Library/Application Support/Mann/Scripts/Jamf Client Communications Doctor.sh"
+
+# Documentation
 Documentation available at https://docs.google.com/document/d/1p0OT3AFrYdS-H6Nio1caa81C-Vug5ZKcRLgKTzUv6zU
