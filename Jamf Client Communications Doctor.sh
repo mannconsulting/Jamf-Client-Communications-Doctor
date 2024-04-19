@@ -376,7 +376,7 @@ else
     etime=$(ps -ao etime= ${jamfPid})
     printlog "Process etime is $etime" DEBUG
     if [[ $etime == *"-"* ]]; then
-      days=$(ps -ao etime= $i | cut -d "-" -f1)
+      days=$(ps -ao etime= ${jamfPid} | cut -d "-" -f1)
       printlog "Jamf Policy running for $days days." DEBUG
     else
       printlog "Jamf Policy isn't older than a day." DEBUG
