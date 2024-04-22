@@ -376,12 +376,12 @@ else
     etime=$(ps -ao etime= ${jamfPid})
     printlog "Process etime is $etime" DEBUG
     if [[ $etime == *"-"* ]]; then
-      days=$(ps -ao etime= ${jamfPid} | cut -d "-" -f1)
-      printlog "Jamf Policy running for $days days." DEBUG
+      policyDays=$(ps -ao etime= ${jamfPid} | cut -d "-" -f1)
+      printlog "Jamf Policy running for $policyDays days." DEBUG
     else
       printlog "Jamf Policy isn't older than a day." DEBUG
     fi
-    if [[ $days -ge 2 ]]; then
+    if [[ $policyDays -ge 2 ]]; then
       printlog "Jamf Policy running for more than 2 days, killing and refreshing LaunchDaemon" ERROR
       killall jamf
       restartJamfLaunchDaemon
