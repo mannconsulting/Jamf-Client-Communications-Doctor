@@ -12,7 +12,7 @@
 #           If you'd like updates or support sign up at https://mann.com/jamf or email support@mann.com for more details
 ###############################################################################
 readonly SCRIPT_PATH="${0}"
-readonly VERSIONDATE=20230829
+readonly VERSIONDATE=20240422
 readonly APPLICATION=JamfClientCommunicationsDoctor
 
 LOGGING=INFO
