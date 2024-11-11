@@ -381,8 +381,8 @@ else
     else
       printlog "Jamf Policy isn't older than a day." DEBUG
     fi
-    if [[ $policyDays -ge 2 ]]; then
-      printlog "Jamf Policy running for more than 2 days, killing and refreshing LaunchDaemon" ERROR
+    if [[ $policyDays -ge 14 ]]; then
+      printlog "Jamf Policy running for more than 14 days, killing and refreshing LaunchDaemon" WARN
       killall jamf
       restartJamfLaunchDaemon
     fi
@@ -426,7 +426,7 @@ else
               deduplicatelogs $childrenNames
               childrenNames="${logoutput}"
               echo $(date "+%Y-%m-%d %k:%M:%S") > "/Library/Application Support/JAMF/Last_Blocking_Policy_Date"
-              echo "${logoutput}" "/Library/Application Support/JAMF/Last_Blocking_Policy_Child"
+              echo "${logoutput}" > "/Library/Application Support/JAMF/Last_Blocking_Policy_Child"
               printlog "Child ${childType} at $child has been running for longer than $KILL_THRESHOLD minutes. Killing the ${childType}. First 10 lines of ${childFile} for debugging:\n${childContents}\nChild Processes: ${childrenNames}" ERROR
               printlog "Killing parent $child" DEBUG
               kill -9 $child
