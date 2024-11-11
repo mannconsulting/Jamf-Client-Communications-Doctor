@@ -12,7 +12,7 @@
 #           If you'd like updates or support sign up at https://mann.com/jamf or email support@mann.com for more details
 ###############################################################################
 readonly SCRIPT_PATH="${0}"
-readonly VERSIONDATE=20240422
+readonly VERSIONDATE=20241110
 readonly APPLICATION=JamfClientCommunicationsDoctor
 
 LOGGING=INFO
@@ -359,7 +359,7 @@ else
   jamfPid=$(getJamfPid)
 
   if [[ -z "${jamfPid}" ]]; then
-    printlog "Failed to get jamf PID, exiting" WARN
+    printlog "Failed to get jamf PID, it may have quit before we got to checking. Exiting." INFO
     exit 2
   fi
   jamfCommand=$(ps -o command= ${jamfPid})
@@ -427,7 +427,7 @@ else
               childrenNames="${logoutput}"
               echo $(date "+%Y-%m-%d %k:%M:%S") > "/Library/Application Support/JAMF/Last_Blocking_Policy_Date"
               echo "${logoutput}" > "/Library/Application Support/JAMF/Last_Blocking_Policy_Child"
-              printlog "Child ${childType} at $child has been running for longer than $KILL_THRESHOLD minutes. Killing the ${childType}. First 10 lines of ${childFile} for debugging:\n${childContents}\nChild Processes: ${childrenNames}" ERROR
+              printlog "Child ${childType} at $child has been running for longer than $KILL_THRESHOLD minutes. Killing the ${childType}. First 10 lines of ${childFile} for debugging:\n${childContents}\nChild Processes: ${logoutput}" ERROR
               printlog "Killing parent $child" DEBUG
               kill -9 $child
               printlog "Killing children $children" DEBUG
