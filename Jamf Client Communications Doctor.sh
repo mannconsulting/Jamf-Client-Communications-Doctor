@@ -12,13 +12,13 @@
 #           If you'd like updates or support sign up at https://mann.com/jamf or email support@mann.com for more details
 ###############################################################################
 readonly SCRIPT_PATH="${0}"
-readonly VERSIONDATE=20241119
+readonly VERSIONDATE=20241110
 readonly APPLICATION=JamfClientCommunicationsDoctor
-EXIT_AFTER_TIME=25200
+
 LOGGING=INFO
 POLICY_KILL_THRESHOLD=850
 EA_KILL_THRESHOLD=60
-caffeinateJamf=no
+caffeinateJamf=yes
 caffeinateTimer=54834
 
 ### Start Public Logging Public - 20230816
