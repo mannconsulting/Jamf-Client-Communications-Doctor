@@ -11,54 +11,120 @@
 #           Redistribution or commercial use without including this header is prohibited.
 #           If you'd like updates or support sign up at https://mann.com/jamf or email support@mann.com for more details
 ###############################################################################
-readonly SCRIPT_PATH="${0}"
-readonly VERSIONDATE=20241110
+readonly VERSIONDATE=20260331
 readonly APPLICATION=JamfClientCommunicationsDoctor
-
 LOGGING=INFO
 POLICY_KILL_THRESHOLD=850
 EA_KILL_THRESHOLD=60
 caffeinateJamf=yes
 caffeinateTimer=54834
+##### Start Default Header 20251112
+zmodload zsh/datetime
+PATH="/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin"
+scriptPath=${0}
+currentUser=${$(scutil <<< "show State:/Users/ConsoleUser" | awk '/Name :/ { print $3 }'):-UnknownUserName}
+currentUserID=$(scutil <<< "show State:/Users/ConsoleUser" | awk '/kCGSSessionUserIDKey :/ { print $3 }')
+currentUserHome=$(dscl . -read Users/${currentUser} | grep ^NFSHomeDirectory | awk '{print $2}')
+jamfHelper="/Library/Application Support/JAMF/bin/jamfHelper.app/Contents/MacOS/jamfHelper"
+LogDateFormat="%Y-%m-%d %H:%M:%S"
+starttime=$(strftime "$LogDateFormat")
 
-### Start Public Logging Public - 20230816
-#
-# Logging Levels
-# ERROR - Only fatal errors
-# WARN - Fatal errors and warnings
-# INFO - All messages, no user identifiable data
-# DEBUG - Debug logging may inclue user identifiable data.
-#
-# SESSIONID
-# Randomly generated number for this session.
-
-JSSURL=$(defaults read /Library/Preferences/com.jamfsoftware.jamf.plist jss_url)
-jamfVarJSSID=0
-
-readonly SESSIONID=${jamfVarJSSID}-$RANDOM
+### Start Logging 20251112
+readonly jamfVarJSSID=$(defaults read "/Library/Managed Preferences/com.mann.jamfuserdata.plist" JSSID 2>/dev/null || echo 0)
+readonly JSSURL=$(defaults read /Library/Preferences/com.jamfsoftware.jamf.plist jss_url 2>/dev/null) \
+         hostname=${hostname:-$(hostname)} \
+         computername=${computername:-$(scutil --get ComputerName 2>/dev/null)} \
+         serialnumber=${serialnumber:-$(ioreg -d2 -c IOPlatformExpertDevice | awk -F\" '/IOPlatformSerialNumber/{print $(NF-1)}')} \
+         SESSIONID=${jamfVarJSSID}-$RANDOM
 declare -rA levels=(DEBUG 0 INFO 1 WARN 2 ERROR 3)
+LOGGING=${LOGGING-INFO} DATADOGLOGGING=${DATADOGLOGGING-INFO}
 
 printlog() {
   [[ -z "$2" ]] && 2=INFO
-  log_message=$1
+  [[ -z "$1" ]] && return
+  local log_message log insidelogrepeat=0 previous_line
+  if [[ ${1//[$'\n']/} != "$1" ]]; then
+    while read log; do
+      if [[ $log == $previous_line ]]; then
+        let insidelogrepeat=$insidelogrepeat+1
+        continue
+      fi
+      previous_line="$log"
+      if [[ $insidelogrepeat -gt 2 ]]; then
+        log_message+="Last line repeated ${insidelogrepeat} more times\n"
+        local insidelogrepeat=0
+        log_message+="$log\n"
+      fi
+      log_message+="$log\n"
+    done <<< "$1"
+  else
+    log_message=$1
+  fi
   log_priority=$2
-  timestamp=$(date +%F\ %T)
+  local timestamp=$(strftime '%Y-%m-%d %H:%M:%S')
+  local logLength=${#log_message}
+  if [[ $logLength -ge 76000 ]]; then
+    local leftOver=${log_message:76000}
+    log_message=${log_message:0:75999}
+  fi
+  if [[ "$log_message" == "$previous_log_message" ]]; then
+    ((logrepeat++)); return
+  elif (( logrepeat > 0 )); then
+    echo "$timestamp $previous_log_priority: Last message repeated $logrepeat more times"
+    [[ -n "$DATADOGAPI" ]] && send_to_datadog "Last message repeated $logrepeat more times" "$previous_log_priority"
+    logrepeat=0
+  fi
+  previous_log_message="$log_message"; previous_log_priority="$log_priority"
+  [[ ${levels[$log_priority]:-0} -ge ${levels[$LOGGING]:-1} ]] && { echo "$timestamp $log_priority: $log_message"; logger -t "Mann-$APPLICATION" "Mann-$APPLICATION: $log_message" &|; }
+  [[ -n "$DATADOGAPI" && ${levels[$log_priority]:-0} -ge ${levels[$DATADOGLOGGING]:-1} ]] && send_to_datadog "$log_message" "$log_priority"
+  if [[ -n $leftOver ]]; then printlog $leftOver $log_priority; fi
+}
 
-  if [[ ${levels[$log_priority]} -ge ${levels[$LOGGING]} ]]; then
-    while IFS= read -r logmessage; do
-      echo "$timestamp" "${log_priority} : $JSSURL : $APPLICATION : $VERSIONDATE : $SESSIONID : ${logmessage}"
-    done <<< "$log_message"
+send_to_datadog() {
+  local msg="$1" level="$2"
+  ((INDEX++))
+  if [[ "${redaction:l}" != "disabled" ]]; then
+    msg="${msg//${hostname:-PROTECTED_HOSTNAME}/PROTECTED_HOSTNAME}"
+    msg="${msg//${computername:-PROTECTED_COMPUTERNAME}/PROTECTED_COMPUTERNAME}"
+    msg="${msg//${serialnumber:-PROTECTED_SERIALNUMBER}/PROTECTED_SERIALNUMBER}"
+    msg="${msg//${currentUser:-PROTECTED_USERNAME}/PROTECTED_USERNAME}"
+    msg="${msg//${password:-PROTECTED_PASSWORD}/PROTECTED_PASSWORD}"
+  fi
+  msg="${msg//\"/\\\"}"
+  msg="${msg//$'\n'/\\n}"
+  curl -H "Content-Type: application/json" -H "DD-API-KEY: $DATADOGAPI" -m 15 -s \
+       -X POST https://http-intake.logs.datadoghq.com/v1/input \
+       -d "{\"message\":\"$msg\",\"level\":\"$level\",\"http.url\":\"$JSSURL\",\"application\":\"$APPLICATION\",\"version\":\"$VERSIONDATE\",\"index\":\"$INDEX\",\"env\":\"$SWVERSIONLONG\",\"sessionid\":\"$SESSIONID\"}" >/dev/null &|
+}
+
+jamfPrettyExit() {
+  message=${1}
+  message="${message//\//\\/}" # Escape forward slashes
+  policyLogFile=$(ps -p $PPID | tail -1 | awk -F"'" '{print $(NF-1)}')
+  if [[ -f "$policyLogFile" ]]; then
+    sed -i '' '1s/^/\'$'\n/g' "$policyLogFile"
+    sed -i '' '1s/^/####################################################\'$'\n/g' "$policyLogFile"
+    sed -i '' '1s/^/'"${message//$'\n'/\\n}"'\'$'\n/g' "$policyLogFile"
+    sed -i '' '1s/^/####################################################\'$'\n/g' "$policyLogFile"
+    sed -i '' '1s/^/\'$'\n/g' "$policyLogFile"
   fi
 }
 
-deduplicatelogs() {
-  loginput=${1:-"Log"}
-  logoutput="$loginput"
+cleanupAndExit() { # $1 = exit code, $2 message
+  printlog "$2" $3
+  jamfPrettyExit "$2"
+  printlog "################## End $APPLICATION (took $((( (`strftime %s` - `date -jf $LogDateFormat $starttime +%s`) ))) seconds)" INFO
+  exit "$1"
 }
-### End Public Logging
+
+if [[ $lockedSeconds -gt 7200 ]]; then
+  printlog "Computer has been locked for over 2 hours, using higher kill thresholds for hung policy protection." WARN
+  POLICY_KILL_THRESHOLD=1700
+  EA_KILL_THRESHOLD=180
+fi
 
 installNeeded() {
-  local -r myHash=$(shasum -a 256 "${SCRIPT_PATH}" | awk '{print $1}')
+  local -r myHash=$(shasum -a 256 "${scriptPath}" | awk '{print $1}')
   local -r installedPath="/Library/Application Support/Mann/Scripts/Jamf Client Communications Doctor.sh"
   if [[ ! -x "${installedPath}" ]]; then
     printlog "${APPLICATION} script is not installed" INFO
@@ -74,26 +140,22 @@ installNeeded() {
   fi
 }
 
-caffeinateKill() {
-  if pgrep -fq "caffeinate -s -t ${caffeinateTimer}"; then
-    printlog "caffeinate command found, killing" INFO
-    pkill -f "caffeinate -s -t ${caffeinateTimer}"
-  fi
-}
-
 installScript() {
-  local -r scriptPath="/Library/Application Support/Mann/Scripts/Jamf Client Communications Doctor.sh"
+  local -r _scriptPath="/Library/Application Support/Mann/Scripts/Jamf Client Communications Doctor.sh"
 
   if ! [[ -d "/Library/Application Support/Mann/Scripts" ]]; then
     mkdir -p "/Library/Application Support/Mann/Scripts"
-    chown root:admin "/Library/Application Support/Mann/Scripts"
-    chmod 755 "/Library/Application Support/Mann/Scripts"
   fi
 
-  touch "${scriptPath}"
-  chmod 700 "${scriptPath}"
-  chown root:wheel "${scriptPath}"
-  cat "${SCRIPT_PATH}" > "${scriptPath}"
+  chown root:admin "/Library/Application Support/Mann"
+  chmod 755 "/Library/Application Support/Mann"
+  chown root:admin "/Library/Application Support/Mann/Scripts"
+  chmod 755 "/Library/Application Support/Mann/Scripts"
+
+  touch "${_scriptPath}"
+  chmod 755 "${_scriptPath}"
+  chown root:wheel "${_scriptPath}"
+  cat "${scriptPath}" > "${_scriptPath}"
 }
 
 installLaunchd() {
@@ -145,8 +207,7 @@ round() {
 fixBlockingInstallers() {
   installerProcesses=($(pgrep -x -d " " installer))
   installerCommands=$(ps -ao "etime command" | grep installer)
-  deduplicatelogs "$installerCommands"
-  printlog "Installer processes found: $logoutput" WARN
+  printlog "Installer processes found: $installerCommands" WARN
   for i in $installerProcesses; do
     installerDetails=$(ps -o "pid etime command" -p $i | tail +2)
     printlog "Checking process $installerDetails" INFO
@@ -161,7 +222,7 @@ fixBlockingInstallers() {
       continue
     fi
     if [[ $days -ge 1 ]]; then
-      printlog "Found Blocking Installer Running for $days days at $installerDetails killing all" ERROR
+      printlog "Found Blocking Installer Running for $days days at $installerDetails killing all. The system has been locked for $(beenLockedSince) seconds." ERROR
       killall -9 installer
       killall -9 package_script_service
       killall -9 installd
@@ -174,7 +235,6 @@ fixBlockingInstallers() {
 list_descendants() {
   local children=( $(pgrep -P "$1" 2>&1) )
   local realOutput=""
-
   for pid in $children
   do
     output=$(list_descendants "$pid" | tr -d $'\n')
@@ -228,8 +288,7 @@ jamfLaunchDaemonCheck() {
   else
     printlog "Jamf LaunchDaemon missing, refreshing management framework" ERROR
     jamfManageOutput=$(jamf manage -verbose 2>&1)
-    deduplicatelogs $jamfManageOutput
-    printlog "Jamf Management Framework Refreshed: ${logoutput}" INFO
+    printlog "Jamf Management Framework Refreshed: ${jamfManageOutput}" INFO
   fi
   taskLabel=$(cat /Library/LaunchDaemons/com.jamfsoftware.task.1.plist | grep com.jamfsoftware.task | cut -d '>' -f 2 | cut -d '<' -f 1)
   launchctlOutput=$(launchctl print "system/${taskLabel}")
@@ -245,6 +304,7 @@ jamfLaunchDaemonCheck() {
     printlog "Jamf Daemon not loaded, restarting" ERROR
     startJamfLaunchDaemon
   fi
+  enableJamfCheckinTaskIfDisabled
 }
 
 parseProfile() {
@@ -303,9 +363,19 @@ parseProfile() {
   unset mannPlistPath
 }
 
+enableJamfCheckinTaskIfDisabled() {
+  local -r label=$(cat /Library/LaunchDaemons/com.jamfsoftware.task.1.plist | xmllint --xpath '//key[text()="Label"]/following-sibling::string[1]/text()' -)
+  if launchctl print system | grep -q '"'"${label}"'"[[:space:]]*=>[[:space:]]*disabled'; then
+    printlog "Found that Jamf's check-in task ${label} was disabled. This SHOULD NOT HAPPEN" ERROR
+    launchctl enable "system/${label}"
+    launchctl bootstrap system /Library/LaunchDaemons/com.jamfsoftware.task.1.plist
+  fi
+}
+
 restartJamfLaunchDaemon() {
   launchctl bootout system /Library/LaunchDaemons/com.jamfsoftware.task.1.plist
   launchctl bootstrap system /Library/LaunchDaemons/com.jamfsoftware.task.1.plist
+  enableJamfCheckinTaskIfDisabled
   launchctl bootout system /Library/LaunchDaemons/com.jamf.management.daemon.plist
   launchctl bootstrap system /Library/LaunchDaemons/com.jamf.management.daemon.plist
 }
@@ -313,6 +383,7 @@ restartJamfLaunchDaemon() {
 startJamfLaunchDaemon() {
   launchctl bootout system /Library/LaunchDaemons/com.jamfsoftware.task.1.plist
   launchctl bootstrap system /Library/LaunchDaemons/com.jamfsoftware.task.1.plist
+  enableJamfCheckinTaskIfDisabled
   launchctl bootout system /Library/LaunchDaemons/com.jamf.management.daemon.plist
   launchctl bootstrap system /Library/LaunchDaemons/com.jamf.management.daemon.plist
 }
@@ -349,27 +420,33 @@ if [[ $invokedByJamf -eq 1 ]]; then
     installScript
     installLaunchd
     uninstallOld
-    printlog "Installed Successfully"
+    printlog "Installed Successfully" INFO
   else
     printlog "Install/Upgrade not necessary, exiting" WARN
     exit 0
   fi
 else
-  # Not invoked by Jamf (running as launchd)
+
   jamfPid=$(getJamfPid)
 
   if [[ -z "${jamfPid}" ]]; then
-    printlog "Failed to get jamf PID, it may have quit before we got to checking. Exiting." INFO
+    printlog "Failed to get jamf PID, exiting" DEBUG
     exit 2
   fi
+
   jamfCommand=$(ps -o command= ${jamfPid})
   printlog "jamfCommand is ${jamfCommand}" DEBUG
 
-  if [[ ${caffeinateJamf:l} == "yes" ]]; then
-    printlog "Caffeinate set to yes, Caffeinating the process" DEBUG
-    caffeinate -s -t ${caffeinateTimer} -w ${jamfPid} &
-    caffeinatePID=$!
-  fi
+  blankWait=0
+  while [[ "${jamfCommand}" == *"randomDelaySeconds"* ]]; do
+    printlog "jamfCommand contains randomDelaySeconds, waiting for actual policy to start" DEBUG
+    sleep 30
+    jamfPid=$(getJamfPid)
+    jamfCommand=$(ps -o command= ${jamfPid})
+  done
+  if [[ -z "${jamfPid}" ]]; then cleanupAndExit 0 "Failed to get jamf PID after waiting for random delay, exiting" INFO;fi
+  jamfCommand=$(ps -o command= ${jamfPid})
+  printlog "jamfCommand is now ${jamfCommand}" DEBUG
 
   # Begin Cleanup Loop
   while true; do
@@ -382,17 +459,18 @@ else
       printlog "Jamf Policy isn't older than a day." DEBUG
     fi
     if [[ $policyDays -ge 14 ]]; then
-      printlog "Jamf Policy running for more than 14 days, killing and refreshing LaunchDaemon" WARN
+      longRunDebug=$(ps -ao 'etime= ppid= command= ' ${jamfPid})
+      longRunDebug+=$(tail -n 20 /var/log/jamf.log)
+      printlog "Jamf Policy running for more than 14 days, killing and refreshing LaunchDaemon. The system has been locked for $(beenLockedSince) seconds. Logs: ${longRunDebug}" WARN
       killall jamf
       restartJamfLaunchDaemon
     fi
 
     IFS=$'\n'
-    jamfChildren=( $(pgrep -aP $jamfPid) )
+    jamfChildren=( $(pgrep -P $jamfPid) )
+    printlog "jamfChildren for $jamfPid is '${jamfChildren[@]}' (count ${#jamfChildren[@]})" DEBUG
     if ! ps -p $jamfPid > /dev/null 2>&1 ; then
-      printlog "Jamf process gone, exiting." DEBUG
-      caffeinateKill
-      exit 0
+      cleanupAndExit 0 "Jamf process gone, exiting." INFO
     fi
 
     if [[ -n $jamfChildren ]]; then
@@ -402,18 +480,22 @@ else
         [[ -z "${child}" ]] && continue;
         printlog "Child pid is '${child}'" DEBUG
         local childCommand="$(ps -o command= ${child})"
-        local childFile="$(echo ${childCommand/*\/Library/\/Library} | cut -d "'" -f2)"
-        printlog "childCommand is '${childCommand}'" DEBUG
-        printlog "childFile is '${childFile}'" DEBUG
+        local childFile="$(echo ${${childCommand%%>& *}/*\/Library/\/Library} | cut -d "'" -f1)"
+        childFile=${childFile##/bin/zsh }
         local childType=$(getJamfSubcommandType "${childCommand}")
+        printlog "Policy Kill threshold is ${POLICY_KILL_THRESHOLD}" DEBUG
         local KILL_THRESHOLD=$(getJamfSubcommandThreshold "${childFile}" ${childType})
+        printlog "Kill threshold is ${POLICY_KILL_THRESHOLD}" DEBUG
         if [[ "${childType}" == "extension-attribute" || "${childType}" == "policy" ]]; then
           if [[ ${+runningChildren[$child]} == 1 ]]; then
             runningChildren[$child]=$(( ${runningChildren[$child]} + 1))
-            printlog "Child ${childType} at $child has been running for ${runningChildren[$child]} minutes ($KILL_THRESHOLD max)" DEBUG
+            printlog "Child ${childType} at $child has been running for ${runningChildren[$child]} minutes ($KILL_THRESHOLD minutes allowed)" DEBUG
             if (( ${runningChildren[$child]} >= $KILL_THRESHOLD )); then
-              childContents=$(head -10 "${childFile}" | awk '{printf "%s\\n", $0}')
-              children=($(list_descendants "$child"))
+              printlog "childCommand is '${childCommand}'" INFO
+              printlog "childFile is '${childFile}'" INFO
+              childContents=$(head -20 "${childFile}" | awk '{printf "%s\\n", $0}')
+              IFS=$' \t\n' children=($(list_descendants "$child")); IFS=$'\n'
+              printlog "Children of $child are ${children[@]}" DEBUG
               childrenNames=$(ps -x -p $children[@] | awk '{printf "%s\\n", $0}')
               if [[ -z $childrenNames ]]; then
                 printlog "Unable to get children Names, trying to be more Verbose." WARN
@@ -423,21 +505,28 @@ else
                 printlog "Unable to get children Names, just listing everything." WARN
                 childrenNames=$(ps -x -o "pid=ProcessID ppid=ParentID etime=ElapsedTime command=Command")
               fi
-              deduplicatelogs $childrenNames
-              childrenNames="${logoutput}"
+
               echo $(date "+%Y-%m-%d %k:%M:%S") > "/Library/Application Support/JAMF/Last_Blocking_Policy_Date"
-              echo "${logoutput}" > "/Library/Application Support/JAMF/Last_Blocking_Policy_Child"
-              printlog "Child ${childType} at $child has been running for longer than $KILL_THRESHOLD minutes. Killing the ${childType}. First 10 lines of ${childFile} for debugging:\n${childContents}\nChild Processes: ${logoutput}" ERROR
+              echo "${childrenNames}" > "/Library/Application Support/JAMF/Last_Blocking_Policy_Child"
+              printlog "Child ${childType} at $child has been running for longer than $KILL_THRESHOLD minutes. The system has been locked for $(beenLockedSince) seconds. Killing the ${childType}. First 20 lines of ${childFile} for debugging:\n${childContents}\nChild Processes: ${childrenNames}" ERROR
               printlog "Killing parent $child" DEBUG
               kill -9 $child
               printlog "Killing children $children" DEBUG
-              for i in $children[@]; do
-                kill -9 ${i}
+              for i in "${children[@]}"; do
+                kill -9 "${i}"
+                printlog "Killed child process ${i}" DEBUG
               done
+              remainingChildren=($(pgrep -P $child 2>/dev/null))
+              printlog "Remaining children of $child after kill attempt: ${remainingChildren[@]}" DEBUG
+              if [[ ${#remainingChildren[@]} -eq 0 ]]; then
+                printlog "All child processes of $child killed successfully" INFO
+              else
+                printlog "Failed to kill child processes of $child, remaining: ${remainingChildren[*]}" ERROR
+              fi
               unset "runningChildren[${child}]"
             fi
           else
-            printlog "Found ${childType} at pid $child, adding to watch-list" DEBUG
+            printlog "Found ${childType} at pid $child ($(ps -o command= $child)), adding to watch-list" DEBUG
             runningChildren[$child]=0
           fi
         fi
